@@ -1,0 +1,4 @@
+torch>=2.5
+torchvision>=0.20
+matplotlib>=3.8
+networkx>=3.2
