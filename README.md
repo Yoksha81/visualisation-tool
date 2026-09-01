@@ -198,7 +198,7 @@ VizTool/
 │   ├── session.py
 │   ├── view.py
 │   └── visualizer.py
-├── examples/
+├── eksperimenti/
 │   ├── torchvision_demo.py
 │   ├── example_input_demo.py
 │   └── sam2_single_session.py
