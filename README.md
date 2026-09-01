@@ -1,14 +1,18 @@
 # VizTool
 
-VizTool je alat za interaktivnu vizuelizaciju arhitekture PyTorch modela. Model se prikazuje hijerarhijski: na početku se vide veći moduli, a levi klik otvara njihov sadržaj sve do PyTorch modula i elementarnih operacija.
+VizTool je alat za interaktivnu vizuelizaciju arhitekture PyTorch modela.
 
-Alat koristi `torch.fx.symbolic_trace` kao prvi način analize. Ako symbolic tracing nije dovoljan, moguće je proslediti reprezentativne ulaze i koristiti `torch.export` kao rezervni način analize.
+Model se prikazuje hijerarhijski: na početku se vide veći moduli, a njihovim otvaranjem moguće je doći do manjih PyTorch modula i elementarnih računskih operacija.
+
+Alat koristi `torch.fx.symbolic_trace` kao primarni način analize modela. Ako symbolic tracing nije dovoljan, moguće je proslediti reprezentativne ulaze i koristiti `torch.export` kao rezervni način analize.
+
+**Autor:** Jovan Boksan, EE156/2022
 
 ## Mogućnosti
 
 - prikaz hijerarhije `nn.Module` objekata;
 - prikaz stvarnih dataflow veza između operacija;
-- detekcija residual/skip veza;
+- prikaz grananja i residual/skip veza;
 - prikaz funkcijskih operacija kao što su `Add`, `MatMul`, `Cat`, `Transpose` i druge;
 - interaktivno otvaranje i zatvaranje modula;
 - podrška za modele sa jednim ili više ulaza;
@@ -21,16 +25,16 @@ Alat koristi `torch.fx.symbolic_trace` kao prvi način analize. Ako symbolic tra
 Preporučeno je korišćenje posebnog Python okruženja.
 
 ```bash
-git clone <URL_OVOG_REPOZITORIJUMA>
-cd VizTool
+git clone https://github.com/Yoksha81/visualisation-tool.git
+cd visualisation-tool
 pip install -r requirements.txt
 ```
 
-Za osnovni rad alata dovoljne su biblioteke iz `requirements.txt`.
+Za osnovni rad alata dovoljne su biblioteke navedene u `requirements.txt`.
 
 ## Brzi primer
 
-Za standardne torchvision modele nije potrebno ručno praviti ulaz ako `torch.fx.symbolic_trace` može da analizira model.
+Za standardne `torchvision` modele nije potrebno ručno praviti ulaz ako `torch.fx.symbolic_trace` može uspešno da analizira model.
 
 ```python
 from torchvision.models import resnet18, ResNet18_Weights
@@ -43,17 +47,25 @@ model = resnet18(
 visualize(model)
 ```
 
-Pokretanje gotovog primera:
+Gotov primer nalazi se u:
 
-```bash
-python examples/torchvision_demo.py
+```text
+eksperimenti/torchvision_demo.py
 ```
 
-Ovaj primer može da se koristi i za demonstraciju alata na prethodno obučenom modelu iz `torchvision.models`.
+Pokreće se iz root foldera projekta:
+
+```bash
+python -m eksperimenti.torchvision_demo
+```
+
+Primer koristi prethodno obučeni `ResNet18` iz `torchvision.models`.
 
 ## Model kome je potreban example input
 
-Ako `symbolic_trace` ne uspe, korisnik može da prosledi konkretan ulaz:
+Ako `torch.fx.symbolic_trace` ne može da obradi model, korisnik može da prosledi konkretan reprezentativni ulaz. Tada alat može da pokuša analizu pomoću `torch.export`.
+
+Za jedan ulaz:
 
 ```python
 visualize(
@@ -85,40 +97,71 @@ visualize(
 
 Ako su example input-i prosleđeni, alat po default-u prvo proverava da li model može da se izvrši sa njima.
 
+Jednostavan primer ovog načina rada nalazi se u:
+
+```text
+eksperimenti/example_input_demo.py
+```
+
+i može se pokrenuti:
+
+```bash
+python -m eksperimenti.example_input_demo
+```
+
 ## Interakcija
 
-U običnom prikazu:
+U standardnom prikazu:
 
-- levi klik na plavi modul: otvaranje modula;
-- desni klik unutar otvorenog modula: zatvaranje najbližeg otvorenog modula.
+- levi klik na plavi modul otvara modul;
+- desni klik unutar otvorenog modula zatvara najbliži otvoreni modul.
 
 U composite/SAM2 prikazu dodatno postoje:
 
-- dugme `Overview`;
-- `Esc` ili `Backspace` za povratak na high-level prikaz.
+- dugme `Overview` za povratak na početni prikaz;
+- `Esc` ili `Backspace` za povratak na overview.
 
-Boje čvorova:
+Boje čvorova imaju sledeće značenje:
 
 - zeleno — ulaz;
 - crvenkasto — izlaz;
-- plavo — modul koji može da se otvori;
+- plavo — modul koji može dalje da se otvori;
 - sivo — terminalni PyTorch modul;
-- žuto — elementarna operacija;
+- žuto — elementarna računska operacija;
 - ljubičasto — runtime ili eksterni čvor u high-level prikazu.
 
-Legenda se prikazuje ispod grafa.
+Legenda se automatski prikazuje ispod grafa.
 
 ## SAM2
 
-SAM2 nema jedan jednostavan root `forward()` koji predstavlja kompletan inference tok. Zbog toga VizTool koristi composite režim: high-level tok je definisan kao pregled glavnih komponenti, a svaka komponenta se zatim analizira istim analyzerom kao i običan PyTorch model.
+VizTool je testiran i na zvaničnoj implementaciji modela Segment Anything 2.
 
-Primer se nalazi u:
+Za demonstraciju je korišćena konfiguracija:
 
 ```text
-examples/sam2_single_session.py
+configs/sam2/sam2_hiera_t.yaml
 ```
 
-Za SAM2 je prvo potrebno instalirati zvanični repozitorijum:
+odnosno SAM2 model sa Hiera-Tiny image encoder-om.
+
+Model se za vizuelizaciju instancira bez pretrained checkpoint-a, pošto vrednosti parametara nisu potrebne za analizu njegove arhitekture.
+
+### Zašto SAM2 koristi composite prikaz?
+
+SAM2 nije klasičan model sa jednim jednostavnim root `forward()` pozivom koji predstavlja kompletan video inference tok.
+
+Njegove glavne komponente učestvuju u streaming obradi frejmova i koriste memoriju prethodnih frejmova. Zbog toga nije moguće samo jednim `symbolic_trace(model)` pozivom dobiti kompletan high-level SAM2 tok.
+
+VizTool zato koristi composite režim:
+
+1. high-level veze između glavnih SAM2 komponenti definišu se na osnovu poznate arhitekture modela;
+2. svaka glavna komponenta se zatim zasebno analizira istim generičkim analyzerom koji se koristi i za ostale PyTorch modele.
+
+Na taj način high-level pregled predstavlja funkcionalnu SAM2 arhitekturu, dok su unutrašnji computation graph-ovi komponenti automatski dobijeni analizom PyTorch modela.
+
+### Instalacija SAM2
+
+Potrebno je instalirati zvanični SAM2 repozitorijum u isto Python okruženje u kojem se koristi VizTool.
 
 ```bash
 git clone https://github.com/facebookresearch/sam2.git
@@ -126,33 +169,54 @@ cd sam2
 pip install -e .
 ```
 
-Zatim se primer pokreće iz okruženja u kojem su dostupni i SAM2 i VizTool:
+Nakon toga se iz root foldera VizTool projekta SAM2 demonstracija može pokrenuti:
 
 ```bash
-python examples/sam2_single_session.py
+python -m eksperimenti.sam2_single_session
 ```
 
-Primer koristi konfiguraciju `sam2_hiera_t.yaml` i ne zahteva checkpoint za samu demonstraciju arhitekture.
-
-High-level prikaz predstavlja jedan vremenski korak obrade video frame-a:
+Primer se nalazi u:
 
 ```text
-Input Frame -> Image Encoder -> Memory Attention -> Mask Decoder -> Mask Output
-                              ^                  ^
-                              |                  |
-                   previous Memory Bank     Prompt Encoder
-                                                 ^
-                                                 |
-                                               Prompt
-
-Image Encoder ----+
-                  +-> Memory Encoder -> updated Memory Bank
-Mask Decoder -----+
+eksperimenti/sam2_single_session.py
 ```
 
-Memory Bank je prikazan kao prethodna i ažurirana memorija da bi jedan vremenski korak ostao DAG.
+### High-level SAM2 tok
 
-Klikom na sledeće blokove otvara se njihov stvarni computation graph:
+High-level prikaz predstavlja jedan vremenski korak obrade video frejma:
+
+```text
+                              Memory Bank
+                           (previous frames)
+                                  |
+                                  v
+Input Frame -> Image Encoder -> Memory Attention -> Mask Decoder -> Mask Output
+                   |                                  ^
+                   |                                  |
+                   |                           Prompt Encoder
+                   |                                  ^
+                   |                                  |
+                   |                                Prompt
+                   |
+                   +----------------> Mask Decoder
+                   |
+                   +----------------> Memory Encoder
+                                          ^
+                                          |
+                                    Mask prediction
+                                          |
+                                          v
+                                  Memory Bank
+                                     (updated)
+```
+
+Memory Bank je prikazan kao prethodna i ažurirana memorija da bi se jedan vremenski korak prikazao kao DAG.
+
+Direktna veza iz `Image Encoder` ka `Mask Decoder` predstavlja korišćenje feature mapa visoke rezolucije.
+
+`Memory Encoder` koristi feature-e slike i rezultat segmentacije za formiranje memorije koja se može koristiti pri obradi narednih frejmova.
+
+Klikom na glavne blokove mogu se otvoriti njihovi computation graph-ovi:
 
 - Image Encoder;
 - Memory Attention;
@@ -162,32 +226,63 @@ Klikom na sledeće blokove otvara se njihov stvarni computation graph:
 
 ## Kako alat radi
 
-Tok obrade je:
+Osnovni tok analize je:
 
 ```text
 PyTorch model
     |
-    +-- torch.fx.symbolic_trace
+    v
+torch.fx.symbolic_trace
     |
-    +-- ako FX ne uspe:
-            torch.export + example input
+    | ako uspe
+    v
+ModelGraph
+
+Ako FX ne uspe:
     |
     v
+torch.export + example input
+    |
+    v
+ModelGraph
+
 ModelGraph
     |
     v
 VisibleGraph
     |
     v
-renderer + interakcija
+Renderer
+    |
+    v
+Interaktivni prikaz
 ```
 
-`ModelGraph` čuva kompletan analizirani graf. `VisibleGraph` predstavlja samo deo koji je trenutno vidljiv u zavisnosti od otvorenih i zatvorenih modula.
+### ModelGraph
+
+`ModelGraph` predstavlja kompletan rezultat analize modela.
+
+Sadrži:
+
+- operacije;
+- module;
+- veze između operacija;
+- pripadnost operacija određenim modulima.
+
+### VisibleGraph
+
+`VisibleGraph` predstavlja samo deo modela koji je u tom trenutku prikazan korisniku.
+
+Kada je modul zatvoren, njegove unutrašnje operacije predstavljene su jednim čvorom.
+
+Kada korisnik otvori modul, prikazuju se njegovi child moduli ili njegove operacije.
+
+Ovakav pristup omogućava da se veoma veliki modeli pregledaju postepeno, od većih arhitektonskih celina ka manjim jedinicama.
 
 ## Struktura projekta
 
 ```text
-VizTool/
+visualisation-tool/
 ├── model_visualizer/
 │   ├── __init__.py
 │   ├── analyzer.py
@@ -198,43 +293,122 @@ VizTool/
 │   ├── session.py
 │   ├── view.py
 │   └── visualizer.py
+│
 ├── eksperimenti/
 │   ├── torchvision_demo.py
 │   ├── example_input_demo.py
 │   └── sam2_single_session.py
+│
 ├── requirements.txt
+├── .gitignore
 └── README.md
 ```
 
-## Uloga fajlova
+## Uloga glavnih fajlova
 
-`analyzer.py` analizira PyTorch model i pravi `ModelGraph`.
+### `analyzer.py`
 
-`graph.py` sadrži strukture podataka kojima se predstavljaju operacije, moduli i veze.
+Analizira PyTorch model i formira `ModelGraph`.
 
-`view.py` određuje koji deo grafa je trenutno vidljiv i realizuje expand/collapse logiku.
+Prvo pokušava analizu pomoću `torch.fx.symbolic_trace`. Ako ona ne uspe i prosleđeni su example input-i, koristi `torch.export`.
 
-`renderer.py` računa raspored i crta čvorove, grane, grupe i legendu.
+### `graph.py`
 
-`interactive.py` obrađuje klikove za standardni model.
+Sadrži strukture podataka kojima se predstavljaju:
 
-`session.py` realizuje composite prikaz i navigaciju između overview-a i pojedinačnih komponenti.
+- operacije;
+- moduli;
+- veze;
+- kompletan model graph;
+- trenutno vidljiv graph.
 
-`runtime.py` obrađuje i proverava example input-e.
+### `view.py`
 
-`visualizer.py` sadrži glavni javni poziv `visualize()`.
+Određuje koji deo kompletnog grafa je trenutno vidljiv.
+
+Ovde se nalazi logika za:
+
+- otvaranje i zatvaranje modula;
+- predstavljanje zatvorenog modula jednim čvorom;
+- formiranje vidljivih veza;
+- sprečavanje veštačkih ciklusa koji mogu nastati prilikom sažimanja modula.
+
+### `renderer.py`
+
+Zadužen je za vizuelni prikaz grafa.
+
+Koristi NetworkX za rad sa grafom i Matplotlib za crtanje.
+
+U njemu se nalaze:
+
+- raspored čvorova;
+- crtanje grana;
+- prikaz skip veza;
+- prikaz otvorenih grupa;
+- boje čvorova;
+- legenda.
+
+### `interactive.py`
+
+Obrađuje interakciju korisnika kod standardnog prikaza modela.
+
+Levi klik otvara modul, a desni klik ga zatvara.
+
+### `session.py`
+
+Realizuje composite prikaz za složenije modele.
+
+Omogućava:
+
+- high-level overview;
+- otvaranje pojedinačnih komponenti;
+- povratak na overview;
+- čuvanje expand/collapse stanja;
+- keširanje već analiziranih komponenti.
+
+### `runtime.py`
+
+Sadrži pomoćne funkcije za obradu i proveru example input-a.
+
+### `visualizer.py`
+
+Sadrži glavni javni API alata.
+
+Najjednostavniji način korišćenja je:
+
+```python
+visualize(model)
+```
+
+ili, kada su potrebni konkretni ulazi:
+
+```python
+visualize(
+    model,
+    example_inputs=x
+)
+```
 
 ## Ograničenja
 
 - Nije moguće automatski odrediti validne dimenzije ulaza za proizvoljan `nn.Module`.
-- `torch.fx` ne može da obradi svaku Python kontrolu toka; u tim slučajevima koristi se `torch.export`.
+- `torch.fx` ne može da obradi svaku Python kontrolu toka.
+- Za modele koje FX ne može da analizira potrebni su reprezentativni example input-i za `torch.export`.
 - Veoma duboko otvoreni modeli mogu postati vizuelno gusti.
-- Za modele bez jednog reprezentativnog root `forward()` high-level veze moraju biti poznate ili deklarisane posebno.
+- Za složene sisteme bez jednog reprezentativnog root `forward()` toka, kao što je SAM2, high-level veze moraju biti poznate i deklarisane posebno.
+- Alat je namenjen vizuelizaciji arhitekture i computation graph-a, a ne analizi vrednosti naučenih parametara modela.
 
 ## Korišćene tehnologije
 
+- Python
 - PyTorch
-- torch.fx
-- torch.export
+- `torch.fx`
+- `torch.export`
 - NetworkX
 - Matplotlib
+
+## Literatura i reference
+
+- N. Ravi et al., *SAM 2: Segment Anything in Images and Videos*, 2024.
+- Meta AI, zvanična implementacija modela Segment Anything 2.
+- PyTorch dokumentacija za `torch.fx` i `torch.export`.
